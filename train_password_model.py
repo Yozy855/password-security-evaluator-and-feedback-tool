@@ -1,5 +1,3 @@
-
-
 # password_classifier.py
 from __future__ import annotations
 from pathlib import Path
@@ -26,16 +24,28 @@ def load_dataset(csv_path: str = "data.csv") -> pd.DataFrame:
 def train_model(csv_path="data.csv", max_iter=1000, verbose=False):
     df = load_dataset(csv_path)
 
+    # Split once: train + test
+    X_train, X_test, y_train, y_test = train_test_split(
+        df["password"],
+        df["strength"],
+        test_size=0.20,
+        random_state=42,
+        stratify=df["strength"]
+    )
+
+    # Build TF-IDF
     vectorizer = TfidfVectorizer(analyzer="char", ngram_range=(2, 4))
-    X = vectorizer.fit_transform(df["password"])
-    y = df["strength"]
+    X_train_vec = vectorizer.fit_transform(X_train)
+    X_test_vec = vectorizer.transform(X_test)
 
+    # Train model
     model = LogisticRegression(max_iter=max_iter, n_jobs=1)
-    model.fit(X, y)
+    model.fit(X_train_vec, y_train)
 
+    # Evaluate on real test set
     if verbose:
-        y_pred = model.predict(X)
-        print(classification_report(y, y_pred, target_names=LABELS.values()))
+        y_pred = model.predict(X_test_vec)
+        print(classification_report(y_test, y_pred, target_names=LABELS.values()))
 
     return model, vectorizer
 

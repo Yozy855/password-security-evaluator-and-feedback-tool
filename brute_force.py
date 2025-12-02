@@ -3,14 +3,34 @@
 import pandas as pd
 
 COMMON_PWDS = set()
+COMMON_NAMES = set()
 
 def load_common_passwords(path="ignis-1K.csv"):
     global COMMON_PWDS
     df = pd.read_csv(path, header=None)
     COMMON_PWDS = set(p.lower().strip() for p in df[0].astype(str))
 
-load_common_passwords()
+def load_common_names(path="girl_boy_names_2024.csv"):
+    global COMMON_NAMES
+    df = pd.read_csv(path)  # we WANT the header row
+    girl_names = df["Girl Name"].dropna().astype(str)
+    boy_names = df["Boy Name"].dropna().astype(str)
 
+    COMMON_NAMES = set(
+        name.lower().strip()
+        for name in list(girl_names) + list(boy_names)
+    )
+
+load_common_passwords()
+load_common_names()
+
+def contains_common_name(pw):
+    pw_lower = pw.lower()
+
+    for name in COMMON_NAMES:
+        if name in pw_lower:
+            return True, name
+    return False, None
 
 def estimate_bruteforce_time(pw, guesses_per_second=1e6):
     """
@@ -64,11 +84,17 @@ def format_time(seconds):
 def analyze_password(pw, guesses_per_second=1e6):
      # 1) Check dictionary hits first
     if pw.lower() in COMMON_PWDS:
-        print(f"Password: {pw}")
         print("  ❌ This password appears in the common-passwords list!")
         print("  Attackers crack it instantly.\n")
         return  # no need to bother with brute-force
     
+    # 2) Check name presence
+    has_name, name = contains_common_name(pw)
+    if has_name:
+        print(f"  ❌ Contains a common name: '{name}'")
+        print("  Easy to guess using hybrid dictionary attacks.\n")
+        return
+
     t_seconds = estimate_bruteforce_time(pw, guesses_per_second)
     #t_str = format_time(t_seconds)
 

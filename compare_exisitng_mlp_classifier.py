@@ -1,45 +1,71 @@
-# Load model directly
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-
-tokenizer = AutoTokenizer.from_pretrained("DunnBC22/codebert-base-Password_Strength_Classifier")
-model = AutoModelForSequenceClassification.from_pretrained("DunnBC22/codebert-base-Password_Strength_Classifier")
-
-
-
-
-'''import pandas as pd
-mine = pd.read_csv("password_strength_with_explanations.csv")
-kaggle = pd.read_csv("path/to/kaggle/password-strength-classifier-dataset.csv")  # after download
-
-print("mine shape:", mine.shape)
-print("kaggle shape:", kaggle.shape)
-print(mine['strength'].value_counts(), "\n")
-print(kaggle['strength'].value_counts())
-
-
-
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, TextClassificationPipeline
-import joblib
+import torch
 import pandas as pd
-from sklearn.metrics import classification_report
-
-# load HF model
-model_name = "DunnBC22/codebert-base-Password_Strength_Classifier"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-hf_model = AutoModelForSequenceClassification.from_pretrained(model_name)
-pipe = TextClassificationPipeline(model=hf_model, tokenizer=tokenizer, return_all_scores=False)
-
-# load your test set
-df_test = pd.read_csv("your_test.csv")   # contains columns 'password' and 'strength' (int or label)
-preds = []
-for pw in df_test['password'].tolist():
-    out = pipe(pw)[0]  # {'label': 'LABEL_0', 'score': 0.99} or possibly 'Weak' depending on card
-    label = out['label']
-    preds.append(label)
-
-print(classification_report(df_test['strength'], preds))
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, classification_report
 
 
+# --------------------------
+# Load HF model
+# --------------------------
+tokenizer = AutoTokenizer.from_pretrained("DunnBC22/codebert-base-Password_Strength_Classifier")
+hf_model = AutoModelForSequenceClassification.from_pretrained(
+    "DunnBC22/codebert-base-Password_Strength_Classifier"
+)
+hf_model.eval()
 
-'''
+LABELS = ["Weak", "Medium", "Strong"]
+
+# --------------------------
+# Load & prepare dataset
+# --------------------------
+df = pd.read_csv("data.csv", on_bad_lines='skip')
+
+df = df.dropna(subset=["password", "strength"])
+df = df.sample(n=10000, random_state=42)
+df["strength"] = df["strength"].astype(int)
+
+passwords = df["password"].tolist()
+labels = df["strength"].tolist()
+
+# --------------------------
+# TF-IDF + Logistic Regression
+# --------------------------
+tfidf = TfidfVectorizer(analyzer='char', ngram_range=(2, 4))
+X = tfidf.fit_transform(passwords)
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, labels, test_size=0.2, random_state=42
+)
+
+clf = LogisticRegression(max_iter=1000)
+clf.fit(X_train, y_train)
+
+y_pred = clf.predict(X_test)
+
+print("\n=== TF-IDF + Logistic Regression Results ===")
+print("Overall Accuracy:", accuracy_score(y_test, y_pred))
+print(classification_report(y_test, y_pred))
+
+
+# --------------------------
+# HuggingFace Model Accuracy
+# --------------------------
+def hf_predict(password):
+    tokens = tokenizer(password, return_tensors="pt", truncation=True, padding=True)
+    with torch.no_grad():
+        outputs = hf_model(**tokens)
+        pred = torch.argmax(outputs.logits, dim=1).item()
+    return pred
+
+
+hf_preds = [hf_predict(pw) for pw in passwords]
+
+print("\n=== HuggingFace CodeBERT Model Results ===")
+print("Overall Accuracy:", accuracy_score(labels, hf_preds))
+print(classification_report(labels, hf_preds))
+
+
 #test it and compare with ours. if its better use this one

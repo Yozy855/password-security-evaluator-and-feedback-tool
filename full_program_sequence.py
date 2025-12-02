@@ -3,7 +3,7 @@ import joblib
 #from password_classifier import predict_strength
 from brute_force import analyze_password, format_time
 #from feedback_model import generate_feedback
-from sft_feedback_model import generate_feedback
+from sft_feedback_llm import generate_feedback
 
 CRACK_THRESHOLD = 60 * 60 * 24 * 7  # 1 week
 
@@ -24,34 +24,29 @@ def classify_password(password: str) -> str:
 
 
 def main():
-
-    brute_too_short_time = False
+    est_crack_time = False
     detected_in_list = False
+
     pwd = input("Enter password: ")
 
     ml_label = classify_password(pwd)
-    brute_seconds = analyze_password(pwd)
+    time_seconds = analyze_password(pwd)
 
     print(f"ML Strength: {ml_label}")
 
-    if brute_seconds is None:
-        print("Detected in common-passwords list--so didn't go through brute force")
+    if time_seconds is None:
+        print("Detected in common-passwords or names list!!")
         detected_in_list = True
     else:
-        print(f"Bruteforce seconds: {brute_seconds}")
-        print(f"Bruteforce time: {format_time(brute_seconds)}")
-        if brute_seconds < CRACK_THRESHOLD:
-            print("Bruteforce time is less than threshold (a week)")
-            brute_too_short_time = True
+        print(f"Pswd crack time: {format_time(time_seconds)}")
+        if time_seconds < CRACK_THRESHOLD:
+            print("Pswd crack time is less than threshold (a week)")
+            est_crack_time = True
 
-    # Trigger feedback logic
-    if ml_label == "weak" or brute_too_short_time or detected_in_list:
-        print("\nPassword flagged as weak, common, or easy to crack. (Feedback model will run here)")
-    
-        from sft_feedback_model import generate_feedback
+    if ml_label == "weak" or est_crack_time or detected_in_list:
+        print("\nPassword flagged as weak, common, or easy to crack. (Generating feedback...)")
 
         print(generate_feedback(pwd)) 
-
     else:
         print("\nPassword is acceptable.")
 
