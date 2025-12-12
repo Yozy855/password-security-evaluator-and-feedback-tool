@@ -37,8 +37,8 @@ How to generate new model files and run this program:
 
 1) In order to train the ML password classifier, you must run the train_password_model.py, which will generate two files: password_model.pkl and password_vectorizor.pkl
    These files will then be used to load the trained model in another file.
-2) To train the feedback model, run sft_feedback_llm.py. This takes larger computer power. I ran it on a 100GB GPU node but didn't utilize all of it.
-   This file will generate a folder that contains adapter and tokenizer files, used for the new supervise fine-tuned model that will be loaded in the main program file.
+2) To train the feedback model, run generate_date_and_adapters_sft_llm.py. This takes larger computer power. I ran it on a 100GB GPU node but didn't utilize all of it.
+   This file will generate a folder that contains adapter and tokenizer files, used for the new supervise fine-tuned model that will be loaded in the sft_feedback_llm.py and utilized in the main program file.
 4) Run full_program_sequence.py. This program will load all of the models and ask for input, which the user will get a classification for and potentially feedback.
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
