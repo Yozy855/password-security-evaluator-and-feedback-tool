@@ -1,0 +1,317 @@
+!pip install pandas
+
+import pandas as pd
+import re
+
+
+# Example filename:
+from datasets import load_dataset
+'''import kagglehub
+# Load the dataset, which returns a DatasetDict
+dataset_dict = kagglehub.dataset_download("bhavikbb/password-strength-classifier-dataset")
+'''
+df = pd.read_csv("/content/drive/MyDrive/428Files/data.csv", on_bad_lines = 'skip')
+# Access the 'train' split (or another appropriate split) and convert it to a pandas DataFrame
+# The variable `dataset_dict` is already a pandas DataFrame, not a Hugging Face DatasetDict.
+# So, we directly assign it to `df`.
+print(df.shape[0])
+df = df.sample(10000, random_state=42)
+print(df.shape[0])
+OUTPUT_CSV = "password_strength_with_explanations.csv"
+
+  # Basic character-category checks
+def has_lower(s): return any(c.islower() for c in s)
+def has_upper(s): return any(c.isupper() for c in s)
+def has_digit(s): return any(c.isdigit() for c in s)
+def has_symbol(s): return any(not c.isalnum() for c in s)
+
+# Very small common words / names lists (extend as needed)
+COMMON_WORDS = pd.read_csv("/content/drive/MyDrive/428Files/ignis-1K.csv")
+COMMON_NAMES = pd.read_csv("/content/drive/MyDrive/428Files/girl_boy_names_2024.csv")
+
+print(COMMON_NAMES.shape[0])
+print(COMMON_WORDS.shape[0])
+
+def contains_common_word_or_name(pwd: str) -> bool:
+    s = pwd.lower()
+    # Split by non-letters to catch words
+    tokens = re.split(r"[^a-z]+", s)
+    tokens = [t for t in tokens if t]
+    for t in tokens:
+        if t in COMMON_WORDS or t in COMMON_NAMES:
+            return True
+    return False
+
+def has_repeated_sequences(pwd: str, min_repeat_len: int = 2) -> bool:
+    s = pwd.lower()
+    # Check for repeated substrings like "abab", "123123", "qweqwe"
+    for L in range(min_repeat_len, max(3, len(s)//2 + 1)):
+        for i in range(0, len(s) - 2*L + 1):
+            chunk = s[i:i+L]
+            next_chunk = s[i+L:i+2*L]
+            if chunk == next_chunk:
+                return True
+    return False
+
+
+
+def numeric_to_label(num: int) -> str:
+    if num == 0:
+        return "weak"
+    if num == 1:
+        return "medium"
+    return "strong"
+
+def explain_password(pwd: str, numeric_strength: int):
+    pwd_str = str(pwd)
+    length = len(pwd_str)
+    lower = has_lower(pwd_str)
+    upper = has_upper(pwd_str)
+    digit = has_digit(pwd_str)
+    symbol = has_symbol(pwd_str)
+    common = contains_common_word_or_name(pwd_str)
+    repeated = has_repeated_sequences(pwd_str)
+
+    reasons = []
+    improvements = []
+
+    # Length-based reasons
+    if length < 10:
+        reasons.append("it is too short")
+        improvements.append("make it at least 12 characters long")
+    elif length < 12:
+        reasons.append("it is not very long")
+        improvements.append("increase the length to 12 or more characters")
+    else:
+        reasons.append("it has a decent length")
+
+    # Character variety
+    if not lower and not upper:
+        reasons.append("it does not contain any letters")
+        improvements.append("add lowercase and uppercase letters")
+    elif not lower:
+        reasons.append("it has no lowercase letters")
+        improvements.append("add lowercase letters")
+    elif not upper:
+        reasons.append("it has no uppercase letters")
+        improvements.append("add uppercase letters")
+
+    if not digit:
+        reasons.append("it has no digits")
+        improvements.append("add some numbers")
+    if not symbol:
+        reasons.append("it has no special characters")
+        improvements.append("add special characters like !, ?, # or @")
+
+    # Common words / names
+    if common:
+        reasons.append("it contains common words or names")
+        improvements.append("remove common words, names, and obvious patterns")
+
+    # Repeated sequences
+    if repeated:
+        reasons.append("it repeats the same sequence of characters")
+        improvements.append("avoid repeating the same pattern or phrase")
+
+    # Numeric label influence (coarse adjustment)
+    label_text = numeric_to_label(numeric_strength)
+    if label_text == "weak":
+        reasons.append("overall it matches patterns typical of weak passwords")
+        improvements.append("make it longer and include a mix of letters, numbers, and symbols")
+    elif label_text == "medium":
+        reasons.append("overall it matches patterns typical of medium-strength passwords")
+        improvements.append("improve it by increasing length and adding more character variety")
+    else:
+        reasons.append("overall it matches patterns typical of strong passwords")
+
+    # Build explanation sentence
+    reasons_unique = list(dict.fromkeys(reasons))
+    improvements_unique = list(dict.fromkeys(improvements))
+
+    explanation_parts = []
+    if reasons_unique:
+        explanation_parts.append("It is considered " + label_text + " because " + ", ".join(reasons_unique) + ".")
+    else:
+        explanation_parts.append("It is considered " + label_text + ".")
+
+
+    explanation = " ".join(explanation_parts)
+
+    #suggest new pswd ???nah
+
+    return label_text, explanation
+# You can sample for sanity / speed if the dataset is large
+#if len(df) > 100000:
+#df = df.sample(300000, random_state=42)
+label_texts = []
+explanations = []
+suggestions = []
+print(df.shape[0])
+for _, row in df.iterrows():
+    pwd = row["password"]
+    strength_num = int(row["strength"])
+    label_text, explanation = explain_password(pwd, strength_num)
+    label_texts.append(label_text)
+    explanations.append(explanation)
+    #suggestions.append(suggested)
+
+df["strength_label"] = label_texts
+df["explanation"] = explanations
+#df["suggested_password"] = suggestions
+
+df.to_csv(OUTPUT_CSV, index=False)
+print("Saved:", OUTPUT_CSV)
+df.head()
+!pip install pandas datasets transformers peft bitsandbytes accelerate
+
+import pandas as pd
+from datasets import Dataset
+
+csv_path = "/content/drive/MyDrive/428Files/password_strength_with_explanations.csv"  # your file
+df = pd.read_csv(csv_path)
+print(df.shape[0])
+#df = df.sample(1000, random_state = 42) #30k random rows
+'''def build_text(row):
+    user = (
+        f"Analyze this password and give feedback.\n"
+        f"Password: {row['password']}\n"
+        f"Strength label: {row['strength_label']}\n"
+        f"Explain why it has this strength and how to improve it."
+    )
+    assistant = row["explanation"]
+    return f"<|start_header_id|>user<|end_header_id|>\n{user}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n{assistant}<|eot_id|>"
+
+df["text"] = df.apply(build_text, axis=1)
+dataset = Dataset.from_pandas(df[["text"]])'''
+
+def build_text(row):
+    prompt = (
+        "Analyze the following password.\n"
+        f"Password: {row['password']}\n"
+        f"Strength label: {row['strength_label']}\n"
+        "Explain why it has this strength and how to improve it."
+    )
+
+    target = row["explanation"]
+
+    return {
+        "prompt": prompt,
+        "response": target
+    }
+
+df_formatted = df.apply(build_text, axis=1, result_type="expand")
+dataset = Dataset.from_pandas(df_formatted)
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+model_name = "unsloth/Llama-3.2-1B-Instruct-bnb-4bit"
+
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.float16,
+    bnb_4bit_use_double_quant=True,
+)
+
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
+
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    quantization_config=bnb_config,
+    device_map="auto",
+)
+
+'''def tokenize_function(examples):
+    tokens = tokenizer(
+        examples["text"],
+        padding="max_length",
+        truncation=True,
+        max_length=512,
+    )
+    # Use input_ids as labels for next-token prediction
+    tokens["labels"] = tokens["input_ids"].copy()
+    return tokens
+
+tokenized_dataset = dataset.map(
+    tokenize_function,
+    batched=True,
+    remove_columns=["text"],
+)'''
+def tokenize_function(examples):
+    # Format prompt + response into ONE training string
+    texts = [
+        f"{p}\n\n### Response:\n{r}"
+        for p, r in zip(examples["prompt"], examples["response"])
+    ]
+
+    tokens = tokenizer(
+        texts,
+        padding="max_length",
+        truncation=True,
+        max_length=512,
+    )
+
+    # Labels = same as input_ids
+    tokens["labels"] = tokens["input_ids"].copy()
+
+    return tokens
+
+tokenized_dataset = dataset.map(
+    tokenize_function,
+    batched=True,
+    remove_columns=["prompt", "response"],
+)
+
+from peft import LoraConfig, get_peft_model
+
+lora_config = LoraConfig(
+    r=16,
+    lora_alpha=32,
+    lora_dropout=0.05,
+    bias="none",
+    task_type="CAUSAL_LM",
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+)
+
+model = get_peft_model(model, lora_config)
+model.print_trainable_parameters()
+
+
+!pip uninstall -y wandb
+import os
+
+os.environ["WANDB_MODE"] = "disabled"
+from transformers import TrainingArguments, Trainer
+
+training_args = TrainingArguments(
+    output_dir="./new_results",
+    per_device_train_batch_size=2,
+    num_train_epochs=2,
+    logging_steps=10,
+    save_steps=50,
+    save_total_limit=2,
+    optim="paged_adamw_8bit",
+    learning_rate=2e-4,
+    fp16=True,
+    report_to="none",
+)
+
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=tokenized_dataset,
+)
+trainer.train()
+# Save LoRA adapter
+model.save_pretrained("llama-password-lora")
+
+# Save tokenizer
+tokenizer.save_pretrained("llama-password-lora")                                       
+
+
+adapter_path = "chooseFolder"
+model.save_pretrained(adapter_path)
+tokenizer.save_pretrained(adapter_path)                                       
+                                       
